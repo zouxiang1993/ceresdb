@@ -183,6 +183,7 @@ impl TableUnit {
             batch.entries.len()
         );
 
+        // TODO: 使用rocksdb作为wal容易成为性能瓶颈，这里先把wal禁用掉。
         let entries_num = batch.len() as u64;
         let (wb, max_sequence_num) = {
             let wb = WriteBatch::default();
@@ -190,35 +191,12 @@ impl TableUnit {
             let mut key_buf = BytesMut::new();
 
             for entry in &batch.entries {
-                let region_id = batch.location.region_id;
-                self.log_encoding
-                    .encode_key(
-                        &mut key_buf,
-                        &CommonLogKey::new(region_id, batch.location.table_id, next_sequence_num),
-                    )
-                    .box_err()
-                    .context(Encoding)?;
-                wb.put(&key_buf, &entry.payload)
-                    .map_err(|e| e.into())
-                    .context(Write)?;
-
                 next_sequence_num += 1;
             }
 
             (wb, next_sequence_num - 1)
         };
-
-        let db = self.db.clone();
-        self.runtime
-            .spawn_blocking(move || {
-                db.write(&wb)
-                    .map(|_| max_sequence_num)
-                    .map_err(|e| e.into())
-                    .context(Write)
-            })
-            .await
-            .box_err()
-            .context(Write)?
+        Ok(max_sequence_num)
     }
 }
 
